@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flask SSE REST Sample</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>Flask SSE REST Sample</h1>
+        <p>
+          Use the form below to send messages via the REST API. Responses will
+          appear in the activity feed in real time via Server-Sent Events.
+        </p>
+      </header>
+
+      <section class="card">
+        <h2>Send a Message</h2>
+        <form id="message-form">
+          <label for="message-input">Message</label>
+          <input id="message-input" name="message" type="text" required placeholder="Type something..." />
+          <button type="submit">Send</button>
+        </form>
+        <div id="form-feedback" role="status" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <h2>Activity</h2>
+        <ul id="events" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+  </body>
+</html>
