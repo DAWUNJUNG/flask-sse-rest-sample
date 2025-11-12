@@ -54,6 +54,21 @@ button:hover {
   background-color: #1d4ed8;
 }
 
+.stream-status,
+#stream-status {
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  color: #4b5563;
+}
+
+#stream-status[data-state="connected"] {
+  color: #15803d;
+}
+
+#stream-status[data-state="error"] {
+  color: #dc2626;
+}
+
 #events {
   list-style: none;
   padding: 0;

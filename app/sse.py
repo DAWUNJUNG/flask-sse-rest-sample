@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import time
-from queue import Empty, Queue
+from queue import Queue
 from typing import Dict, Generator
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
@@ -31,20 +31,51 @@ def _format_sse(payload: Dict[str, object]) -> str:
     return f"event: {event_type}\ndata: {data}\n\n"
 
 
-def _event_stream(timeout: float = 15.0) -> Generator[str, None, None]:
-    """Generator yielding SSE formatted messages."""
-    while True:
-        try:
-            payload = _message_queue.get(timeout=timeout)
-        except Empty:
-            keepalive = {
-                "event": "keepalive",
-                "data": {"status": "alive"},
-                "timestamp": time.time(),
-            }
-            yield _format_sse(keepalive)
-        else:
-            yield _format_sse(payload)
+def _timed_burst(payload: Dict[str, object], burst_count: int, interval: float) -> Generator[str, None, None]:
+    """Yield the same payload multiple times with a delay in between."""
+    base_event = payload.get("event", "message")
+    raw_data = payload.get("data")
+    base_data = raw_data if isinstance(raw_data, dict) else {"value": raw_data}
+
+    for index in range(burst_count):
+        burst_payload = {
+            "event": base_event,
+            "data": {
+                **base_data,
+                "sequence": index + 1,
+                "total": burst_count,
+                "remaining": burst_count - index - 1,
+            },
+            "timestamp": time.time(),
+        }
+        yield _format_sse(burst_payload)
+
+        if index < burst_count - 1:
+            time.sleep(interval)
+
+
+def _event_stream(burst_count: int = 3, interval: float = 1.0) -> Generator[str, None, None]:
+    """Generator that streams a single event in fixed intervals, then closes."""
+    handshake = {
+        "event": "keepalive",
+        "data": {"status": "connected"},
+        "timestamp": time.time(),
+    }
+    yield _format_sse(handshake)
+
+    payload = _message_queue.get()
+    yield from _timed_burst(payload, burst_count, interval)
+
+    closing_payload = {
+        "event": "close",
+        "data": {"status": "complete"},
+        "timestamp": time.time(),
+    }
+    final_data = payload.get("data")
+    if isinstance(final_data, dict) and "message" in final_data:
+        closing_payload["data"]["message"] = final_data["message"]
+
+    yield _format_sse(closing_payload)
 
 
 @sse_bp.route("/stream")

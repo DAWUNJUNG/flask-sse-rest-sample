@@ -24,6 +24,8 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
+  ensureStreamConnection();
+
   try {
     const response = await fetch("/api/messages", {
       method: "POST",
@@ -41,27 +43,86 @@ form.addEventListener("submit", async (event) => {
     form.reset();
   } catch (err) {
     handleError(err.message);
+    disconnectStream("Stream cancelled because the request failed.", "error");
   }
 });
 
-const source = new EventSource("/stream");
+const streamStatus = document.getElementById("stream-status");
+let streamSource = null;
 
-source.addEventListener("message", (event) => {
-  try {
-    const payload = JSON.parse(event.data);
-    appendEvent(payload.data.message || JSON.stringify(payload.data));
-  } catch (err) {
-    appendEvent(event.data);
-  }
-});
-
-source.addEventListener("keepalive", () => {
-  feedback.textContent = "Connected to stream";
-  feedback.classList.remove("error");
-});
-
-source.onerror = () => {
-  handleError("Connection to stream lost. Retrying...");
+const setStreamStatus = (text, state = "idle") => {
+  if (!streamStatus) return;
+  streamStatus.textContent = text;
+  streamStatus.dataset.state = state;
 };
 
-appendEvent("Connecting to server...", "status");
+const disconnectStream = (text = "Stream idle", state = "idle") => {
+  if (streamSource) {
+    streamSource.close();
+    streamSource = null;
+  }
+
+  setStreamStatus(text, state);
+};
+
+const handleMessageEvent = (event) => {
+  try {
+    const payload = JSON.parse(event.data);
+    const details = payload.data || {};
+    const parts = [];
+
+    if (details.message) {
+      parts.push(details.message);
+    }
+
+    if (details.sequence && details.total) {
+      parts.push(`(${details.sequence}/${details.total})`);
+    }
+
+    const text = parts.join(" ").trim() || JSON.stringify(details);
+    appendEvent(text, "sse");
+  } catch (err) {
+    appendEvent(event.data, "sse");
+  }
+};
+
+const handleCloseEvent = (event) => {
+  let notice = "Stream completed.";
+  try {
+    const payload = JSON.parse(event.data);
+    if (payload?.data?.message) {
+      notice = `Stream completed for "${payload.data.message}".`;
+    }
+  } catch (_) {
+    // Ignore JSON parse errors for close events.
+  }
+
+  appendEvent(notice, "status");
+  disconnectStream("Stream completed.", "idle");
+};
+
+const connectStream = () => {
+  if (streamSource) {
+    streamSource.close();
+    streamSource = null;
+  }
+
+  streamSource = new EventSource("/stream");
+  setStreamStatus("Connecting to stream...", "pending");
+
+  streamSource.addEventListener("open", () => setStreamStatus("Connected. Waiting for data...", "connected"));
+  streamSource.addEventListener("keepalive", () => setStreamStatus("Awaiting message burst...", "connected"));
+  streamSource.addEventListener("message", handleMessageEvent);
+  streamSource.addEventListener("close", handleCloseEvent);
+  streamSource.onerror = () => {
+    appendEvent("Stream error or server closed connection.", "status");
+    disconnectStream("Stream closed due to error.", "error");
+  };
+};
+
+function ensureStreamConnection() {
+  connectStream();
+  appendEvent("Stream connected. Waiting for events...", "status");
+}
+
+appendEvent("Submit a message to trigger the SSE stream.", "status");
